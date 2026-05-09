@@ -1,5 +1,7 @@
-SignumAI
+# SignumAI
 
-Real-time sign language translation system using computer vision and artificial intelligence.
+Real-time sign language recognition system using computer vision and AI.
 
-Transforming gestures into speech to improve accessibility and communication.
+Current milestone:
+- Webcam capture
+- Hand tracking with MediaPipe
