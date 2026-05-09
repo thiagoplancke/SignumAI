@@ -47,5 +47,6 @@ def detectar_mao(frame):
                 y = int(landmark.y * altura)
 
                 cv.circle(frame, (x, y), 5, (0, 255, 0), -1)
+           
 
-    return frame
+    return frame,resultado.hand_landmarks
