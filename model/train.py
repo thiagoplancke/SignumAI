@@ -1,7 +1,8 @@
 import json
 import torch
 
-from model import SignLanguageModel
+from model.modelo import SignLanguageModel
+from model.augmentation import augment
 
 with open("dataset/labels.json", "r") as f:
     dataset = json.load(f)
@@ -10,8 +11,11 @@ with open("dataset/labels.json", "r") as f:
 X = []
 y = []
 for sample in dataset:
+    features = sample["features"]
 
-    X.append(sample["features"])
+    features = augment(features)
+
+    X.append(features)
 
     y.append(sample["label"])
 
@@ -41,6 +45,8 @@ optimizer = torch.optim.Adam(
 epochs = 6000
 
 for epoch in range(epochs):
+    optimizer.zero_grad()
+
     outputs = model(X)
     loss = criterion(outputs, y)
     loss.backward()
