@@ -2,27 +2,32 @@ import cv2 as cv
 
 from capture.camera import abrir_camera
 from tracking.hand_tracker import detectar_mao
+
 from dataset.collect import collect_sample
+from model.predict import testar_modelo
 
 
 camera = abrir_camera()
 
 print("=== SIGNUM AI ===")
-print("Pressione A-Z para iniciar coleta")
-print("Pressione 1 para sair")
 
 
 # ----------------------------
-# ESTADO DA COLETA
+# ESTADOS
 # ----------------------------
+modo = "predict"
+
 collecting = False
 current_label = None
 samples_left = 0
 
 frame_counter = 0
-save_interval = 5  # salva a cada 5 frames
+save_interval = 5
 
 
+# ----------------------------
+# LOOP PRINCIPAL
+# ----------------------------
 while True:
 
     status, frame = camera.read()
@@ -30,64 +35,139 @@ while True:
     if not status:
         break
 
-    # ----------------------------
-    # DETECÇÃO
-    # ----------------------------
     frame, hand_landmarks = detectar_mao(frame)
 
-    # ----------------------------
-    # TECLADO
-    # ----------------------------
     key = cv.waitKey(1) & 0xFF
 
-    # ----------------------------
-    # INICIAR COLETA
-    # ----------------------------
-    if 97 <= key <= 122:
+    # ==================================================
+    # CONTROLES
+    # ==================================================
+    
 
-        current_label = chr(key).upper()
+    if key == ord('p'):
 
-        collecting = True
-        samples_left = 50
+        modo = "predict"
 
-        print(f"\n[COLETANDO] letra {current_label}")
+        print("\n[MODO PREDIÇÃO]")
 
-    # ----------------------------
-    # COLETA AUTOMÁTICA
-    # ----------------------------
-    if collecting and len(hand_landmarks) > 0:
+    elif key == ord('1'):
 
-        frame_counter += 1
+        break
 
-        # pega primeira mão
+    # ==================================================
+    # TEXOS NA TELA
+    # ==================================================
+    cv.putText(
+        frame,
+        f"Modo: {modo.upper()}",
+        (20, 40),
+        cv.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 255, 255),
+        2
+    )
+
+    cv.putText(
+        frame,
+        " P = Predicao | 1 = Sair",
+        (20, 80),
+        cv.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (200, 200, 200),
+        2
+    )
+
+    # ==================================================
+    # EXISTE MÃO?
+    # ==================================================
+    if len(hand_landmarks) > 0:
+
         mao = hand_landmarks[0]
 
-        # salva só a cada N frames
-        if frame_counter % save_interval == 0:
+        # ==================================================
+        # MODO COLETA
+        # ==================================================
+        if modo == "collect":
 
-            collect_sample(mao, current_label)
+            # inicia coleta
+            if 97 <= key <= 122:
 
-            samples_left -= 1
+                current_label = chr(key).upper()
 
-            print(f"faltam: {samples_left}")
+                collecting = True
 
-        # terminou coleta
-        if samples_left <= 0:
+                samples_left = 50
 
-            collecting = False
+                print(f"\n[COLETANDO] {current_label}")
 
-            print(f"[FINALIZADO] letra {current_label}\n")
+            # coleta automática
+            if collecting:
 
-    # ----------------------------
-    # MOSTRAR CÂMERA
-    # ----------------------------
+                frame_counter += 1
+
+                cv.putText(
+                    frame,
+                    f"Coletando: {current_label}",
+                    (20, 130),
+                    cv.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 255, 255),
+                    2
+                )
+
+                cv.putText(
+                    frame,
+                    f"Faltam: {samples_left}",
+                    (20, 170),
+                    cv.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 255, 255),
+                    2
+                )
+
+                if frame_counter % save_interval == 0:
+
+                    collect_sample(mao, current_label)
+
+                    samples_left -= 1
+
+                if samples_left <= 0:
+
+                    collecting = False
+
+                    print(f"[FINALIZADO] {current_label}")
+
+        # ==================================================
+        # MODO PREDIÇÃO
+        # ==================================================
+        elif modo == "predict":
+
+            letra, confidence = testar_modelo(mao)
+
+            cv.putText(
+                frame,
+                f"Letra: {letra}",
+                (20, 130),
+                cv.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 255, 0),
+                2
+            )
+
+            cv.putText(
+                frame,
+                f"Conf: {confidence:.2f}",
+                (20, 170),
+                cv.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 0),
+                2
+            )
+
+    # ==================================================
+    # MOSTRAR FRAME
+    # ==================================================
     cv.imshow("SignumAI", frame)
-
-    # ----------------------------
-    # SAIR
-    # ----------------------------
-    if key == ord('1'):
-        break
 
 
 camera.release()

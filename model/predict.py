@@ -1,13 +1,9 @@
 import json
 import torch
-import cv2 as cv
 
 from collections import Counter
 
 from model.modelo import SignLanguageModel
-
-from capture.camera import abrir_camera
-from tracking.hand_tracker import detectar_mao
 
 from geometry.normalizar import (
     extrair_landmarks,
@@ -15,7 +11,7 @@ from geometry.normalizar import (
 )
 
 # ----------------------------
-# LABELS
+# LOAD MODEL
 # ----------------------------
 with open("model/label_encoder.json", "r") as f:
     label_to_index = json.load(f)
@@ -25,9 +21,6 @@ index_to_label = {
     for key, value in label_to_index.items()
 }
 
-# ----------------------------
-# MODELO
-# ----------------------------
 model = SignLanguageModel()
 
 model.load_state_dict(
@@ -36,139 +29,60 @@ model.load_state_dict(
 
 model.eval()
 
-# ----------------------------
-# CÂMERA
-# ----------------------------
-camera = abrir_camera()
-
-# ----------------------------
-# HISTÓRICO TEMPORAL
-# ----------------------------
 historico = []
 
-print("=== SIGNUM AI ===")
-print("Pressione Q para sair")
 
 # ----------------------------
-# LOOP
+# PREDICT
 # ----------------------------
-while True:
+def testar_modelo(mao):
 
-    status, frame = camera.read()
+    pontos = extrair_landmarks(mao)
 
-    if not status:
-        break
+    pontos_norm = normalizar_landmarks(pontos)
 
-    frame, hand_landmarks = detectar_mao(frame)
+    features = [
+        coord
+        for ponto in pontos_norm
+        for coord in ponto
+    ]
 
-    if len(hand_landmarks) > 0:
+    X = torch.tensor(
+        [features],
+        dtype=torch.float32
+    )
 
-        mao = hand_landmarks[0]
+    with torch.no_grad():
 
-        # ----------------------------
-        # EXTRAÇÃO
-        # ----------------------------
-        pontos = extrair_landmarks(mao)
+        output = model(X)
 
-        # ----------------------------
-        # NORMALIZAÇÃO
-        # ----------------------------
-        pontos_norm = normalizar_landmarks(pontos)
+        probs = torch.softmax(output, dim=1)
 
-        # ----------------------------
-        # FLATTEN
-        # ----------------------------
-        features = [
-            coord
-            for ponto in pontos_norm
-            for coord in ponto
-        ]
+        confidence = torch.max(probs).item()
 
-        # ----------------------------
-        # TENSOR
-        # ----------------------------
-        X = torch.tensor(
-            [features],
-            dtype=torch.float32
-        )
+        predicted_index = torch.argmax(
+            probs,
+            dim=1
+        ).item()
 
-        # ----------------------------
-        # INFERÊNCIA
-        # ----------------------------
-        with torch.no_grad():
-
-            output = model(X)
-
-            # probabilidades
-            probs = torch.softmax(output, dim=1)
-
-            # confiança máxima
-            confidence = torch.max(probs).item()
-
-            # índice previsto
-            predicted_index = torch.argmax(
-                probs,
-                dim=1
-            ).item()
-
-        letra = index_to_label[predicted_index]
-
-        # ----------------------------
-        # FILTRO DE CONFIANÇA
-        # ----------------------------
-        if confidence > 0.70:
-
-            historico.append(letra)
-
-            # mantém últimos frames
-            if len(historico) > 15:
-                historico.pop(0)
-
-            # letra mais comum
-            letra_estavel = Counter(
-                historico
-            ).most_common(1)[0][0]
-
-        else:
-
-            letra_estavel = "?"
-
-        # ----------------------------
-        # TEXTO NA TELA
-        # ----------------------------
-        cv.putText(
-            frame,
-            f"Letra: {letra_estavel}",
-            (50, 50),
-            cv.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 0),
-            2
-        )
-
-        cv.putText(
-            frame,
-            f"Conf: {confidence:.2f}",
-            (50, 100),
-            cv.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 0),
-            2
-        )
+    letra = index_to_label[predicted_index]
 
     # ----------------------------
-    # MOSTRAR FRAME
+    # SMOOTHING
     # ----------------------------
-    cv.imshow("SignumAI", frame)
+    if confidence > 0.70:
 
-    # ----------------------------
-    # SAIR
-    # ----------------------------
-    if cv.waitKey(1) & 0xFF == ord('q'):
-        break
+        historico.append(letra)
 
-# ----------------------------
-# FINALIZAR
-# ----------------------------
-camera.release()
-cv.destroyAllWindows()
+        if len(historico) > 15:
+            historico.pop(0)
+
+        letra_estavel = Counter(
+            historico
+        ).most_common(1)[0][0]
+
+    else:
+
+        letra_estavel = "?"
+
+    return letra_estavel, confidence
